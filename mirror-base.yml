@@ -1,0 +1,137 @@
+# Shared base for every spec in this repository (lazygit, the terminal UI for
+# git published by Jesse Duffield).
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# bin_scan, metadata, catalog, tests, versions, announce, annotations — stays
+# in that package's own mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. Restate
+# `platforms:` IN FULL or not at all. This repo is single-package, so the
+# measured matrix lives HERE and lazygit/mirror.yml does not restate it, which
+# removes the trap structurally.
+
+skip_prereleases: true
+cascade: true
+
+# New package, bare semver versions (`0.63.1`) that carry no `+build` segment,
+# so the fleet default applies with no exception. A cascade tag (`latest`, `0`,
+# `0.63`) re-points on every re-publish; without a build segment the new
+# manifest would reuse the bare version tag and orphan the prior digest for
+# registry GC, breaking any `@sha256:` pin in a consumer's ocx.lock.
+build_timestamp: date
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Each asset is a ~6.5 MB tar.gz/zip wrapping a ~19 MB static Go binary, so
+  # bundling is recompression-dominated. Six platforms × three versions.
+  max_downloads: 6
+  max_bundles: 3
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# `bin_scan` is FORCED off, not chosen. Every archive is FLAT — `lazygit`
+# (`lazygit.exe` on Windows) sits at the archive root beside LICENSE and
+# README.md with no wrapper directory — so `strip_components: 0` lands the
+# binary at the content root and metadata.json's PATH is a bare
+# `${installPath}`. The scan only inspects an interface-visible
+# `${installPath}/<dir>` PATH entry, so with no subdirectory to point at both
+# `auto` and `verify` fail spec load at exit 65 ("bin_scan is enabled but …
+# declares no interface-visible ${installPath}/<dir> PATH entry"). `off` with a
+# hand-listed `binaries` in metadata.json is what that error itself directs.
+# Quoted so no YAML 1.1 reader folds the bare word into boolean `false`.
+bin_scan: "off"
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. lazygit is pure Go with no cgo, and upstream
+# ships one Linux binary per arch with no musl/gnu split. Measured on ALL FOUR
+# declared Linux artifacts at BOTH ends of the mirrored range (2 arches ×
+# 0.62.2 and 0.63.1); the transcript is recorded above lazygit/mirror.yml's
+# `assets:`. All four: no PT_INTERP, no DT_NEEDED, not UPX-packed.
+#
+# So both Linux keys are BARE. `+libc.glibc` would hide the package from
+# Alpine; `+libc.musl` would hide it from every glibc host it in fact runs on.
+#
+# A bare key claims universality, so it must prove it: ubuntu (glibc) + alpine
+# (musl) + fedora (a different glibc vintage). The ALPINE LEG IS THE PROOF —
+# drop it and the universal claim is merely asserted.
+#
+# ─── No `containers[].setup`, and that is a MEASURED decision ───────────────
+#
+# lazygit drives git, so the fleet reflex (prek, lefthook, gitleaks) is to
+# `apt-get/apk/dnf install git` on every Linux leg. Measured here, it is not
+# needed — none of the four verbs tests/smoke.star runs requires git. Run in a
+# STOCK alpine:3.20 with no git installed (`which git` → not found):
+#
+#   $ lazygit --version
+#   commit=aafe6108…, …, version=0.63.1, os=linux, arch=amd64, git version=
+#   exit=0          # git IS shelled out to, but its absence is tolerated:
+#                   # the `git version=` field is simply empty
+#   $ lazygit --config | wc -l           → 343   exit=0
+#   $ CONFIG_DIR=/tmp/envdir lazygit --print-config-dir
+#   /tmp/envdir                                  exit=0
+#   $ lazygit --ocx-smoke-not-a-flag             exit=2, stdout 0 bytes
+#
+# Every genuinely git-dependent lazygit path opens the terminal UI, which the
+# smoke must never do (a Windows leg would hang), so there is nothing for a
+# `git` install to enable here. The alpine leg passing WITHOUT git is itself
+# the evidence; adding the install line would provision a dependency no
+# assertion reaches. lazygit does of course require git of a real USER — that
+# is recorded in lazygit/CATALOG.md, which is the only place `os.features` and
+# `containers:` cannot say it.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers: &linux_containers
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20", shell: sh }
+      - { image: "fedora:40", shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front. The container
+    # set is the same three images, aliased rather than copied so the two
+    # arches can never drift apart.
+    runner: ubuntu-24.04-arm
+    containers: *linux_containers
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+  #
+  # ── Pass 2 (darwin) ────────────────────────────────────────────────────────
+  # Kept commented in lockstep with the matching `assets:` keys in
+  # lazygit/mirror.yml. Staging `assets:` ALONE would not save runner minutes:
+  # a platform with no resolvable asset self-skips per VERSION but still boots
+  # a real macOS/Windows runner and reports SUCCESS having tested nothing. So
+  # the platform key and its asset regex are uncommented in the SAME pass.
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 —
+  #   # GitHub's native macos-13 Intel pool is exhausted and deadlocks push.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  #
+  # ── Pass 3 (windows) ───────────────────────────────────────────────────────
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  # windows/arm64:
+  #   # Native arm64 Windows runner — the amd64 pool cannot execute an ARM64 PE.
+  #   runner: windows-11-arm
+  #   shell: pwsh
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

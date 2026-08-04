@@ -1,0 +1,172 @@
+# ⚠ `extends:` is a SHALLOW merge of TOP-LEVEL KEYS. Setting a key here
+# REPLACES the base's block outright — there is no per-key merge. `platforms:`
+# is deliberately NOT restated below: it carries the container legs that make
+# this spec's bare Linux keys honest, and restating it to tweak one runner
+# would drop them all without reddening anything. This repo is single-package,
+# so the measured matrix lives in the base and nothing here touches it.
+extends: ../mirror-base.yml
+
+name: lazygit
+
+# Logical index package `lazygit/lazygit` at the physical path
+# `ghcr.io/ocx-contrib/lazygit/lazygit` — slash segments, never
+# hyphen-flattened. Two segments always; `jesseduffield` is a personal handle,
+# not a vendor, so the tool names itself (skill Phase 1 rule 4, the same reason
+# zoxide is `zoxide/zoxide` and not `ajeetdsouza/zoxide`). Provenance is not
+# lost — it is recorded verifiably in the claim's `upstream` block. The first
+# segment must be this repo's own GitHub owner: GITHUB_TOKEN only authorises
+# packages owned by the repo the workflow runs in.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/lazygit/lazygit
+
+source:
+  type: github_release
+  owner: jesseduffield
+  repo: lazygit
+  # lazygit tags carry a "v" prefix (e.g. "v0.63.1"); the captured version does
+  # not — the asset FILENAMES spell it without the v, so the two must not be
+  # conflated. Verified against every tag back to v0.57.0: the scheme is
+  # uniform bare `vMAJOR.MINOR.PATCH`, with no rc/beta suffix in the listing.
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST. lazygit is pure
+# Go with no cgo, so upstream ships one Linux binary per arch with no musl/gnu
+# split. Measured on ALL FOUR declared Linux artifacts at BOTH ends of the
+# mirrored range (2 arches × 0.62.2 and 0.63.1), not just the newest:
+#
+#   $ file lazygit                       # 0.63.1 linux_x86_64
+#   ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked,
+#   BuildID[sha1]=81454dc8…, stripped
+#   $ file lazygit                       # 0.63.1 linux_arm64
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically
+#   linked, BuildID[sha1]=42b3d799…, stripped
+#   $ readelf -l lazygit | grep -c INTERP  → 0   (all four)
+#   $ readelf -d lazygit | grep -c NEEDED  → 0   (all four)
+#
+#     ⇒ requires NOTHING of the host → BARE `linux/amd64` and `linux/arm64`.
+#       The alpine container leg in ../mirror-base.yml is what turns that
+#       universality claim into evidence.
+#
+# The static verdict was cross-checked against the UPX trap, which makes a
+# packed glibc-dynamic binary read as "statically linked" because the packer
+# stub carries no PT_INTERP and no section headers:
+#
+#   $ strings -a lazygit | grep -c '^UPX'          → 0   (all four)
+#   $ readelf -h lazygit | grep 'section headers'  → 400 (bytes into file)
+#
+# Not packed, and section headers are present — so `file`'s answer is the real
+# ELF's, not a stub's. Decisively re-confirmed by RUNNING the artifact under a
+# stock `alpine:3.20` (musl, no glibc): exit 0, which a gnu-dynamic binary
+# could not manage.
+#
+# ─── Archive layout: FLAT on every platform ────────────────────────────────
+#
+# Every archive — tar.gz and zip alike — holds exactly three entries at its
+# ROOT with no wrapper directory. Verified on 0.62.2 and 0.63.1, linux +
+# darwin + windows:
+#
+#   $ tar tvzf lazygit_0.63.1_linux_x86_64.tar.gz
+#   -rw-r--r--  1071      LICENSE
+#   -rw-r--r--  38251     README.md
+#   -rwxr-xr-x  19255480  lazygit
+#   $ unzip -l lazygit_0.63.1_windows_x86_64.zip
+#   1071 LICENSE · 38251 README.md · 19933184 lazygit.exe
+#
+# So `strip_components: 0` on every platform (stripping 1 on a flat archive
+# would DELETE the first entry and hoist its siblings), the binary lands at the
+# content root, and one metadata.json (PATH = ${installPath}) serves all six.
+#
+# ─── Scope + resolution (verified on EVERY in-range release) ────────────────
+#
+# The mirrored range is exactly v0.62.2, v0.63.0, v0.63.1 — three releases.
+# Each of the six patterns below was matched against each release's FULL
+# 14-asset list: EXACTLY ONE match, every time, both ways. A pattern matching
+# zero is silently skipped rather than an error, which would yield a green run
+# with a missing platform. No in-range release is asset-less, and every
+# release's asset names carry ITS OWN version string (0.62.2 assets on v0.62.2,
+# and so on) — checked explicitly, because an upstream shipping the previous
+# version's binaries under a new tag greens everything.
+#
+# Upstream also publishes, and this mirror deliberately does not carry:
+#   lazygit_<V>_linux_32-bit.tar.gz      — ocx has no 386 architecture
+#   lazygit_<V>_windows_32-bit.zip       — ocx has no 386 architecture
+#   lazygit_<V>_linux_armv6.tar.gz       — ocx has no 32-bit arm architecture
+#   lazygit_<V>_freebsd_*.tar.gz  (× 4)  — freebsd is not an ocx os
+#   checksums.txt                        — sidecar
+# ocx's `Architecture` enum is amd64 + arm64 only, so the 32-bit and armv6
+# assets are not declarable platforms rather than deliberate omissions.
+#
+# THE ARCH-TOKEN TRAP HERE: amd64's token is `x86_64` and 32-bit x86's token is
+# the literal HYPHENATED string `32-bit`. `_x86_64` cannot prefix-match
+# `_32-bit`, but both live in the same `_<os>_<arch>.` slot, so every pattern
+# is anchored at BOTH ends and pins the extension — that is what keeps the
+# 32-bit, armv6 and freebsd assets out, and what makes `_linux_arm64` reject
+# `_linux_armv6` and `_freebsd_arm64` alike.
+assets:
+  linux/amd64:
+    - "^lazygit_.*_linux_x86_64\\.tar\\.gz$"
+  linux/arm64:
+    - "^lazygit_.*_linux_arm64\\.tar\\.gz$"
+  # ── Pass 2 (darwin) ────────────────────────────────────────────────────────
+  # Uncommented together with the matching `platforms:` keys in
+  # ../mirror-base.yml, never on their own.
+  # darwin/amd64:
+  #   - "^lazygit_.*_darwin_x86_64\\.tar\\.gz$"
+  # darwin/arm64:
+  #   - "^lazygit_.*_darwin_arm64\\.tar\\.gz$"
+  #
+  # ── Pass 3 (windows) ───────────────────────────────────────────────────────
+  # The Windows assets are `.zip`, not `.tar.gz`, and hold `lazygit.exe` at the
+  # archive root — same flat layout, so no per-platform asset_type override and
+  # no metadata-windows.json.
+  # windows/amd64:
+  #   - "^lazygit_.*_windows_x86_64\\.zip$"
+  # windows/arm64:
+  #   - "^lazygit_.*_windows_arm64\\.zip$"
+
+asset_type:
+  # Flat archive on every platform (transcript above): the binary sits at the
+  # archive ROOT with no wrapper directory, so nothing may be stripped and PATH
+  # is a bare ${installPath}. That is the one layout where a bare ${installPath}
+  # is correct, and it is why `bin_scan` must stay `off` with `binaries`
+  # hand-listed (../mirror-base.yml).
+  type: archive
+  strip_components: 0
+
+metadata:
+  default: metadata.json
+
+catalog:
+  logo: logo.svg
+
+versions:
+  # 0.62.2 is the floor. Nothing in the asset naming forces it — the scheme is
+  # uniform far below — so it is a CATALOG-SCOPE choice: the current train,
+  # three releases, rather than backfilling eight years of tags. Every release
+  # from it up resolves all six platforms; an asset-less release inside the
+  # range would be dropped SILENTLY by the pipeline, so the range was checked
+  # release by release rather than at its ends.
+  min: "0.62.2"
+  new_per_run: 5
+  poll_interval: "30 */6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: lazygit/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/jesseduffield/lazygit/license --jq '.license.spdx_id'
+  #   MIT
+  org.opencontainers.image.licenses: "MIT"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: lazygit/lazygit
+  fork: ocx-contrib/index
