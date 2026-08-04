@@ -122,10 +122,10 @@ assets:
   # The Windows assets are `.zip`, not `.tar.gz`, and hold `lazygit.exe` at the
   # archive root — same flat layout, so no per-platform asset_type override and
   # no metadata-windows.json.
-  # windows/amd64:
-  #   - "^lazygit_.*_windows_x86_64\\.zip$"
-  # windows/arm64:
-  #   - "^lazygit_.*_windows_arm64\\.zip$"
+  windows/amd64:
+    - "^lazygit_.*_windows_x86_64\\.zip$"
+  windows/arm64:
+    - "^lazygit_.*_windows_arm64\\.zip$"
 
 asset_type:
   # Flat archive on every platform (transcript above): the binary sits at the

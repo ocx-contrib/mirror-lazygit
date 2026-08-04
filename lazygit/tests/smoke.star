@@ -78,11 +78,17 @@ expect.contains(r_version.stdout, "arch=" + str(ocx.target_platform.arch))
 # `gui:` would not satisfy it. Present exactly once each in both 0.62.2 and
 # 0.63.1. No multi-word substring is asserted anywhere: lazygit colourises, and
 # SGR lands per token.
+#
+# The trailing `\s*` is CRLF insurance, not a relaxation: Go writes `\n` even on
+# Windows, but if a runner ever hands back `gui:\r\n`, a bare `$` would sit
+# behind the `\r` and fail on Windows ONLY — a 2×-minutes round trip to learn
+# nothing. The claim is unchanged: the key still has to start at column 0 with
+# nothing but whitespace after it.
 r_config = ocx.run(LAZYGIT, "--config")
 expect.ok(r_config)
-expect.matches(r_config.stdout, r"(?m)^gui:$")
-expect.matches(r_config.stdout, r"(?m)^git:$")
-expect.matches(r_config.stdout, r"(?m)^keybinding:$")
+expect.matches(r_config.stdout, r"(?m)^gui:\s*$")
+expect.matches(r_config.stdout, r"(?m)^git:\s*$")
+expect.matches(r_config.stdout, r"(?m)^keybinding:\s*$")
 # A truncated or wrong-flavour archive that still ran would plausibly emit a
 # few lines; the real document is two orders of magnitude bigger.
 expect.true(len(r_config.stdout.split("\n")) > 100)
