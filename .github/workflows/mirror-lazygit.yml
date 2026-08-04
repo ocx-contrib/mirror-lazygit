@@ -6,7 +6,7 @@ name: lazygit
 
 on:
   schedule:
-    - cron: '30 */6 * * *'
+    - cron: '9 5-23/6 * * *'
   workflow_dispatch:
   push:
     branches: [main]
