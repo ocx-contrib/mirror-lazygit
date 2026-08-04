@@ -47,17 +47,6 @@ the selected file (or hunk, in the staging view), `c` commits, `p` pulls,
 lazygit --config > "$(lazygit --print-config-dir)/config.yml"
 ```
 
-## Install with ocx
-
-```sh
-ocx install ocx.sh/lazygit/lazygit
-```
-
-```sh
-# or pin a specific version
-ocx install ocx.sh/lazygit/lazygit:0.63.1
-```
-
 ## Links
 
 - [lazygit on GitHub](https://github.com/jesseduffield/lazygit)
