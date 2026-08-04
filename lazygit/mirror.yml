@@ -113,10 +113,10 @@ assets:
   # ── Pass 2 (darwin) ────────────────────────────────────────────────────────
   # Uncommented together with the matching `platforms:` keys in
   # ../mirror-base.yml, never on their own.
-  # darwin/amd64:
-  #   - "^lazygit_.*_darwin_x86_64\\.tar\\.gz$"
-  # darwin/arm64:
-  #   - "^lazygit_.*_darwin_arm64\\.tar\\.gz$"
+  darwin/amd64:
+    - "^lazygit_.*_darwin_x86_64\\.tar\\.gz$"
+  darwin/arm64:
+    - "^lazygit_.*_darwin_arm64\\.tar\\.gz$"
   #
   # ── Pass 3 (windows) ───────────────────────────────────────────────────────
   # The Windows assets are `.zip`, not `.tar.gz`, and hold `lazygit.exe` at the
